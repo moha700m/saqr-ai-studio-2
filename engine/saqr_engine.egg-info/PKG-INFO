@@ -1,0 +1,26 @@
+Metadata-Version: 2.4
+Name: saqr-engine
+Version: 0.1.0
+Summary: SAQR AI Studio engine: hardware-aware local face studio
+License: AGPL-3.0-only
+Requires-Python: >=3.10
+Requires-Dist: numpy>=1.26
+Requires-Dist: opencv-python-headless>=4.9
+Requires-Dist: onnx>=1.16
+Requires-Dist: psutil>=5.9
+Requires-Dist: py-cpuinfo>=9.0
+Requires-Dist: nvidia-ml-py>=12.0
+Requires-Dist: pillow>=10.0
+Provides-Extra: cpu
+Requires-Dist: onnxruntime>=1.18; extra == "cpu"
+Provides-Extra: directml
+Requires-Dist: onnxruntime-directml>=1.18; extra == "directml"
+Provides-Extra: cuda
+Requires-Dist: onnxruntime-gpu>=1.18; extra == "cuda"
+Provides-Extra: server
+Requires-Dist: fastapi>=0.110; extra == "server"
+Requires-Dist: uvicorn>=0.29; extra == "server"
+Requires-Dist: python-multipart>=0.0.9; extra == "server"
+Provides-Extra: test
+Requires-Dist: pytest>=8; extra == "test"
+Requires-Dist: httpx>=0.27; extra == "test"

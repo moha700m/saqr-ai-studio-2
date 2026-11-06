@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "saqr-engine"
+version = "0.1.0"
+description = "SAQR AI Studio engine: hardware-aware local face studio"
+license = { text = "AGPL-3.0-only" }
+requires-python = ">=3.10"
+dependencies = [
+  "numpy>=1.26",
+  "opencv-python-headless>=4.9",
+  "onnx>=1.16",
+  "psutil>=5.9",
+  "py-cpuinfo>=9.0",
+  "nvidia-ml-py>=12.0",
+  "pillow>=10.0",
+]
+
+[project.optional-dependencies]
+cpu = ["onnxruntime>=1.18"]
+directml = ["onnxruntime-directml>=1.18"]
+cuda = ["onnxruntime-gpu>=1.18"]
+server = ["fastapi>=0.110", "uvicorn>=0.29", "python-multipart>=0.0.9"]
+test = ["pytest>=8", "httpx>=0.27"]
+
+[project.scripts]
+saqr = "saqr_engine.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["saqr_engine*"]
+
+[tool.setuptools.package-data]
+saqr_engine = ["runtime/probe_conv.onnx", "models/registry.json"]

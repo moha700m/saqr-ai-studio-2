@@ -1,0 +1,2 @@
+[console_scripts]
+saqr = saqr_engine.cli:main
