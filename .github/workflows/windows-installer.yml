@@ -98,6 +98,7 @@ jobs:
           $setup = "installer\Output\SAQR-AI-Setup.exe"
           $log = "$env:RUNNER_TEMP\install.log"
           function Fail($msg) { Write-Host "::error::$msg"; throw $msg }
+          $global:DiagLogs = @()
           function Stage($msg) { Write-Host "::notice::$((Get-Date).ToString('HH:mm:ss')) $msg" }
           function Run($file, [string[]]$argv, $seconds, $what) {
             $t = Get-Date
@@ -105,6 +106,7 @@ jobs:
             if (-not $p.WaitForExit($seconds * 1000)) {
               Get-Process | Where-Object { $_.ProcessName -match 'SAQR|unins|setup' } | ForEach-Object { Write-Host "::error::still running: $($_.ProcessName) pid $($_.Id)" }
               if (Test-Path $log) { Get-Content $log -Tail 6 | ForEach-Object { Write-Host "::error::install.log: $_" } }
+              foreach ($f in $global:DiagLogs) { if (Test-Path $f) { Get-Content $f | Select-Object -Last 45 | ForEach-Object { Write-Host "::error::$(Split-Path $f -Leaf): $_" } } }
               $p | Stop-Process -Force -ErrorAction SilentlyContinue
               Fail "$what timed out after $seconds s"
             }
@@ -125,7 +127,8 @@ jobs:
           Get-Content "$data\install_selftest.txt" | ForEach-Object { Stage "selftest: $_" }
           $st = Get-Content "$data\install_selftest.json" | ConvertFrom-Json
           if (-not $st.backend.selected) { Fail "installer hardware/backend check did not select a backend" }
-          $env:SAQR_WATCHDOG = "420"
+          $env:SAQR_WATCHDOG = "240"
+          $global:DiagLogs = @("$env:RUNNER_TEMP\selftest.log", "$data\cli_watchdog.log")
           $rc = Run "$app\SAQR AI Studio.exe" @("--selftest-json", "`"$env:RUNNER_TEMP\selftest.json`"") 480 "model self-test"
           if (Test-Path "$env:RUNNER_TEMP\selftest.log") { Get-Content "$env:RUNNER_TEMP\selftest.log" | Select-Object -Last 40 | ForEach-Object { Write-Host "::notice::selftest.log: $_" } }
           if ($rc -ne 0) { Fail "model self-test failed ($rc)" }

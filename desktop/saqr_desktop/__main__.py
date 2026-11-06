@@ -26,7 +26,26 @@ def _watchdog(log_path: Path | None) -> None:
     fh = open(log_path, "a", encoding="utf-8") if log_path else sys.stderr  # noqa: SIM115 - lives until exit
     if fh is None:  # windowed build without a console
         return
+    # C-level watchdog (works even if a native call holds the GIL) ...
     faulthandler.dump_traceback_later(secs, exit=True, file=fh)
+
+    # ... plus a Python-level one a little earlier with readable thread names
+    import threading
+    import traceback
+
+    def fire() -> None:
+        try:
+            fh.write(f"\nWATCHDOG: still running after {secs - 5:.0f} s, thread stacks:\n")
+            names = {t.ident: t.name for t in threading.enumerate()}
+            for ident, frame in sys._current_frames().items():
+                fh.write(f"--- thread {names.get(ident, ident)}\n{''.join(traceback.format_stack(frame))}")
+            fh.flush()
+        finally:
+            os._exit(3)
+
+    t = threading.Timer(max(1.0, secs - 5), fire)
+    t.daemon = True
+    t.start()
 
 
 def _step(log: Path | None, msg: str) -> None:
