@@ -93,29 +93,47 @@ jobs:
           Get-Item installer\Output\SAQR-AI-Setup.exe | Select-Object Name, Length
 
       - name: Silent install, diagnostics, real swap, uninstall
+        timeout-minutes: 30
         run: |
           $setup = "installer\Output\SAQR-AI-Setup.exe"
+          $log = "$env:RUNNER_TEMP\install.log"
           function Fail($msg) { Write-Host "::error::$msg"; throw $msg }
-          $p = Start-Process $setup -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/CURRENTUSER", "/ACCEPTMODELLICENSES=1", "/LOG=$env:RUNNER_TEMP\install.log" -Wait -PassThru
-          if ($p.ExitCode -ne 0) { Get-Content "$env:RUNNER_TEMP\install.log" -Tail 8 | ForEach-Object { Write-Host "::error::install.log: $_" }; Fail "install failed $($p.ExitCode)" }
+          function Stage($msg) { Write-Host "::notice::$((Get-Date).ToString('HH:mm:ss')) $msg" }
+          function Run($file, [string[]]$argv, $seconds, $what) {
+            $t = Get-Date
+            $p = Start-Process -FilePath $file -ArgumentList $argv -PassThru
+            if (-not $p.WaitForExit($seconds * 1000)) {
+              Get-Process | Where-Object { $_.ProcessName -match 'SAQR|unins|setup' } | ForEach-Object { Write-Host "::error::still running: $($_.ProcessName) pid $($_.Id)" }
+              if (Test-Path $log) { Get-Content $log -Tail 6 | ForEach-Object { Write-Host "::error::install.log: $_" } }
+              $p | Stop-Process -Force -ErrorAction SilentlyContinue
+              Fail "$what timed out after $seconds s"
+            }
+            Stage "$what finished in $([int]((Get-Date) - $t).TotalSeconds) s, exit code $($p.ExitCode)"
+            return $p.ExitCode
+          }
+          $rc = Run $setup @("/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/CURRENTUSER", "/ACCEPTMODELLICENSES=1", "/LOG=`"$log`"") 1200 "silent install"
+          if ($rc -ne 0) { Get-Content $log -Tail 8 | ForEach-Object { Write-Host "::error::install.log: $_" }; Fail "install failed $rc" }
           $app = "$env:LOCALAPPDATA\Programs\SAQR AI Studio"
           $data = "$env:LOCALAPPDATA\SAQR AI Studio"
           if (-not (Test-Path "$app\SAQR AI Studio.exe")) { Fail "app exe missing" }
           if (-not (Test-Path "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\SAQR AI Studio.lnk")) { Fail "start menu shortcut missing" }
           if (-not (Test-Path "$env:USERPROFILE\Desktop\SAQR AI Studio.lnk")) { Fail "desktop shortcut missing" }
-          Get-ChildItem "$data\models" | Select-Object Name, Length | Format-Table
-          Get-Content "$data\install_selftest.txt"
+          $models = Get-ChildItem "$data\models" -Filter *.onnx
+          $models | Select-Object Name, Length | Format-Table
+          Stage "$($models.Count) model files installed"
+          if (-not (Test-Path "$data\install_selftest.json")) { Fail "installer did not write the self-test report" }
+          Get-Content "$data\install_selftest.txt" | ForEach-Object { Stage "selftest: $_" }
           $st = Get-Content "$data\install_selftest.json" | ConvertFrom-Json
           if (-not $st.ok) { Fail "installer self-test reported failures" }
-          $p = Start-Process "$app\SAQR AI Studio.exe" -ArgumentList "--cli", "swap", "-s", "tests\fixtures\painting_youth_met.jpg", "-t", "tests\fixtures\painting_lady_1760.jpg", "-o", "$env:RUNNER_TEMP\swap.png", "--i-have-consent" -Wait -PassThru
-          if ($p.ExitCode -ne 0 -or -not (Test-Path "$env:RUNNER_TEMP\swap.png")) { Fail "swap failed" }
+          $rc = Run "$app\SAQR AI Studio.exe" @("--cli", "swap", "-s", "tests\fixtures\painting_youth_met.jpg", "-t", "tests\fixtures\painting_lady_1760.jpg", "-o", "`"$env:RUNNER_TEMP\swap.png`"", "--i-have-consent") 300 "face swap"
+          if ($rc -ne 0 -or -not (Test-Path "$env:RUNNER_TEMP\swap.png")) { Fail "swap failed ($rc)" }
           Copy-Item "$env:RUNNER_TEMP\swap.png" installer\Output\ci-swap-result.png
           Copy-Item "$data\install_selftest.json" installer\Output\ci-selftest.json
-          $p = Start-Process "$app\unins000.exe" -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART" -Wait -PassThru
-          Start-Sleep -Seconds 5
+          $null = Run "$app\unins000.exe" @("/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART") 300 "uninstall"
+          for ($i = 0; $i -lt 60 -and (Test-Path "$app\SAQR AI Studio.exe"); $i++) { Start-Sleep -Seconds 2 }
           if (Test-Path "$app\SAQR AI Studio.exe") { Fail "uninstall left the app behind" }
           if (Test-Path "$env:USERPROFILE\Desktop\SAQR AI Studio.lnk") { Fail "uninstall left the shortcut" }
-          "install / diagnostics / swap / uninstall: OK"
+          Stage "install / diagnostics / swap / uninstall: OK"
 
       - name: Checksums
         run: |
