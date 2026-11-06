@@ -109,12 +109,65 @@ def _headless(argv: list[str]) -> int | None:
     return None
 
 
+def _crash_log() -> Path:
+    try:
+        from saqr_engine.config import data_dir
+
+        return data_dir() / "crash.log"
+    except Exception:  # noqa: BLE001
+        import tempfile
+
+        return Path(tempfile.gettempdir()) / "saqr_crash.log"
+
+
 def main() -> int:
     multiprocessing.freeze_support()
     logging.basicConfig(level=os.environ.get("SAQR_LOG", "WARNING"))
-    rc = _headless(sys.argv[1:])
-    if rc is not None:
-        return rc
+    argv = sys.argv[1:]
+    if any(a in argv for a in ("--cli", "--probe-json", "--selftest-json")):
+        # Headless mode must never end in the windowed bootloader's "unhandled exception" dialog,
+        # which would block installers and CI forever: log the traceback and exit non-zero.
+        import traceback
+
+        try:
+            rc = _headless(argv)
+            return 0 if rc is None else int(rc)
+        except SystemExit as exc:
+            if isinstance(exc.code, str):
+                with open(_crash_log(), "a", encoding="utf-8") as fh:
+                    fh.write(f"exit: {exc.code}\n")
+                return 2
+            return int(exc.code or 0)
+        except BaseException:  # noqa: BLE001
+            with open(_crash_log(), "a", encoding="utf-8") as fh:
+                fh.write(traceback.format_exc())
+            for flag in ("--probe-json", "--selftest-json"):
+                if flag in argv:
+                    try:
+                        Path(argv[argv.index(flag) + 1]).with_suffix(".log").open("a", encoding="utf-8").write(
+                            "CRASH:\n" + traceback.format_exc())
+                    except Exception:  # noqa: BLE001
+                        pass
+            return 3
+    try:
+        return _gui()
+    except Exception:  # noqa: BLE001 - show the error instead of a silent exit
+        import traceback
+
+        tb = traceback.format_exc()
+        _crash_log().write_text(tb, encoding="utf-8")
+        try:
+            from PySide6.QtWidgets import QApplication, QMessageBox
+
+            _app = QApplication.instance() or QApplication(sys.argv)
+            QMessageBox.critical(None, "SAQR AI Studio", f"SAQR AI Studio hit an error and must close.\n\n"
+                                 f"Details were saved to {_crash_log()}\n\n{tb[-1500:]}")
+        except Exception:  # noqa: BLE001
+            pass
+        return 1
+
+
+def _gui() -> int:
     from PySide6.QtGui import QIcon
     from PySide6.QtWidgets import QApplication
 

@@ -61,7 +61,11 @@ jobs:
           $exe = "dist/SAQR AI Studio/SAQR AI Studio.exe"
           $p = Start-Process -FilePath $exe -ArgumentList "--probe-json", "$env:RUNNER_TEMP\probe.json" -Wait -PassThru
           Get-Content "$env:RUNNER_TEMP\probe.txt"
-          if ($p.ExitCode -ne 0) { Write-Host "::error::probe failed: $($p.ExitCode)"; exit 1 }
+          if ($p.ExitCode -ne 0) { Write-Host "::error::probe failed: $($p.ExitCode) $((Get-Content "$env:RUNNER_TEMP\probe.log") -join ' || ')"; exit 1 }
+          $pj = Get-Content "$env:RUNNER_TEMP\probe.json" | ConvertFrom-Json
+          $ver = @($pj.backend.checks | Where-Object { $_.verified }).Count
+          if ($ver -lt 1) { Write-Host "::error::frozen app could not verify any backend (bundled probe model missing?)"; exit 1 }
+          if (-not (Test-Path "dist/SAQR AI Studio/_internal/saqr_engine/models/registry.json")) { Write-Host "::error::registry.json not bundled"; exit 1 }
           (Get-ChildItem "dist/SAQR AI Studio" -Recurse | Measure-Object -Sum Length).Sum / 1MB
 
       - name: Bundle FFmpeg (GPL shared build, BtbN)
