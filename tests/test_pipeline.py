@@ -144,3 +144,30 @@ def test_real_swap_changes_identity():
     assert cosine(before.embedding, src.embedding) < 0.3
     assert cosine(after.embedding, src.embedding) > 0.6
     assert eng.check_nsfw(res.frame) < 0.5
+
+
+def test_video_pipeline_keeps_audio_and_cleans_up(tmp_path):
+    import shutil
+    import subprocess
+    import threading
+
+    from saqr_engine import config
+    from saqr_engine.pipeline.video import VideoCancelled, VideoJob, ffmpeg_path, probe, process_video
+
+    ff = ffmpeg_path()
+    if not ff:
+        pytest.skip("ffmpeg not available")
+    src = tmp_path / "in.mp4"
+    subprocess.run([ff, "-v", "error", "-f", "lavfi", "-i", "testsrc=size=320x240:rate=25:duration=1",
+                    "-f", "lavfi", "-i", "sine=frequency=440:duration=1", "-c:v", "libx264", "-pix_fmt", "yuv420p",
+                    "-c:a", "aac", "-shortest", str(src)], check=True)
+    eng = FakeEngine(delay=0)
+    eng.process = lambda f, force_detect=False: type("R", (), {"frame": f, "swapped": 1, "faces": [1], "timings": {}})()
+    r = process_video(eng, VideoJob(str(src), str(tmp_path / "out.mp4"), scale=0.5))
+    info = probe(r["output"])
+    assert r["frames"] == 25 and info.has_audio and (info.width, info.height) == (160, 120)
+    ev = threading.Event()
+    with pytest.raises(VideoCancelled):
+        process_video(eng, VideoJob(str(src), str(tmp_path / "c.mp4")), progress=lambda d, t, f: ev.set(), cancel=ev)
+    assert not (tmp_path / "c.mp4").exists()
+    assert not any(config.temp_dir().iterdir())

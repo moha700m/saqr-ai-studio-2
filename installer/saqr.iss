@@ -1,4 +1,4 @@
-; SAQR AI Studio — Windows one-click installer (Inno Setup 6.3+)
+; SAQR AI Studio - Windows one-click installer (Inno Setup 6.3+)
 ; Build:  python scripts/gen_inno_models.py && iscc /DAppVersion=0.1.0 installer\saqr.iss
 ;
 ; Flow: welcome -> AGPL licence -> detected hardware -> model licences -> folder -> tasks -> install
@@ -60,7 +60,7 @@ Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppExe}"; Tasks: desktopico
 
 [Run]
 Filename: "{app}\{#AppExe}"; Parameters: "--selftest-json ""{localappdata}\{#AppName}\install_selftest.json"""; \
-  StatusMsg: "Testing your hardware and the AI models…"; Flags: runhidden waituntilterminated
+  StatusMsg: "Testing your hardware and the AI models..."; Flags: runhidden waituntilterminated
 Filename: "{app}\{#AppExe}"; Description: "{cm:LaunchProgram,{#AppName}}"; Flags: nowait postinstall skipifsilent
 
 [UninstallDelete]
@@ -185,7 +185,7 @@ begin
   ModelAccept.Top := ModelMemo.Top + ModelMemo.Height + ScaleY(12);
   ModelAccept.Width := ModelPage.SurfaceWidth;
   ModelAccept.Height := ScaleY(20);
-  ModelAccept.Caption := 'I accept these model licences — download the models during installation';
+  ModelAccept.Caption := 'I accept these model licences - download the models during installation';
   ModelAccept.Checked := ExpandConstant('{param:ACCEPTMODELLICENSES|0}') = '1';
   ModelAccept.OnClick := @ModelAcceptClick;
 end;
@@ -202,7 +202,7 @@ begin
     WizardForm.ProgressGauge.Max := 1000;
     WizardForm.ProgressGauge.Position := Integer(Progress * 1000 div ProgressMax);
   end;
-  WizardForm.StatusLabel.Caption := 'Downloading ' + FileName + ' — ' +
+  WizardForm.StatusLabel.Caption := 'Downloading ' + FileName + ' - ' +
     IntToStr(Integer(Progress div 1048576)) + ' / ' + IntToStr(Integer(ProgressMax div 1048576)) + ' MB';
   Result := True;
 end;
@@ -237,7 +237,7 @@ procedure CurStepChanged(CurStep: TSetupStep);
 begin
   if (CurStep = ssPostInstall) and ModelAccept.Checked then
   begin
-    WizardForm.StatusLabel.Caption := 'Downloading AI models…';
+    WizardForm.StatusLabel.Caption := 'Downloading AI models...';
     DownloadModels;
     if DownloadFailures <> '' then
       SuppressibleMsgBox('Some models could not be downloaded:' + #13#10 + DownloadFailures + #13#10 +

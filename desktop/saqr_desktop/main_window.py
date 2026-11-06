@@ -13,10 +13,11 @@ from .pages.hardware import HardwarePage
 from .pages.image_studio import ImageStudioPage
 from .pages.live import LivePage
 from .pages.models import ModelsPage
+from .pages.video_studio import VideoStudioPage
 from .widgets import run_task
 
 NAV = [("dashboard", "Dashboard"), ("face", "Face Studio"), ("live", "Live Camera"), ("image", "Image Studio"),
-       ("models", "Models"), ("hardware", "Hardware"), ("settings", "Privacy && Settings")]
+       ("video", "Video Studio"), ("models", "Models"), ("hardware", "Hardware"), ("settings", "Privacy && Settings")]
 
 
 class MainWindow(QMainWindow):
@@ -61,11 +62,12 @@ class MainWindow(QMainWindow):
         self.face = FaceStudioPage(ctx, status)
         self.live = LivePage(ctx, status)
         self.image = ImageStudioPage(ctx, status)
+        self.video = VideoStudioPage(ctx, status)
         self.models = ModelsPage(ctx, status, self._models_changed)
         self.hardware = HardwarePage(ctx, status, self._backend_changed)
         self.settings = SettingsPage(ctx, status)
         for key, w in (("dashboard", self.dashboard), ("face", self.face), ("live", self.live),
-                       ("image", self.image), ("models", self.models), ("hardware", self.hardware),
+                       ("image", self.image), ("video", self.video), ("models", self.models), ("hardware", self.hardware),
                        ("settings", self.settings)):
             self.pages[key] = w
             self.stack.addWidget(w)
@@ -86,12 +88,13 @@ class MainWindow(QMainWindow):
         h.addWidget(self.stack, 1)
         self.face.sourcesChanged.connect(self.live.on_sources_changed)
         self.face.sourcesChanged.connect(self.image.on_sources_changed)
+        self.face.sourcesChanged.connect(self.video.on_sources_changed)
         self.go("dashboard")
         self.setEnabled_pages(False)
         run_task(ctx.detect, on_done=self._detected, on_error=self._detect_failed)
 
     def setEnabled_pages(self, on: bool) -> None:  # noqa: N802
-        for k in ("face", "live", "image"):
+        for k in ("face", "live", "image", "video"):
             self.buttons[k].setEnabled(on)
 
     def go(self, key: str) -> None:

@@ -61,37 +61,60 @@ jobs:
           $exe = "dist/SAQR AI Studio/SAQR AI Studio.exe"
           $p = Start-Process -FilePath $exe -ArgumentList "--probe-json", "$env:RUNNER_TEMP\probe.json" -Wait -PassThru
           Get-Content "$env:RUNNER_TEMP\probe.txt"
-          if ($p.ExitCode -ne 0) { throw "probe failed: $($p.ExitCode)" }
+          if ($p.ExitCode -ne 0) { Write-Host "::error::probe failed: $($p.ExitCode)"; exit 1 }
           (Get-ChildItem "dist/SAQR AI Studio" -Recurse | Measure-Object -Sum Length).Sum / 1MB
+
+      - name: Bundle FFmpeg (GPL shared build, BtbN)
+        run: |
+          $zip = "$env:RUNNER_TEMP\ffmpeg.zip"
+          Invoke-WebRequest "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl-shared.zip" -OutFile $zip
+          Expand-Archive $zip "$env:RUNNER_TEMP\ff" -Force
+          $bin = Get-ChildItem "$env:RUNNER_TEMP\ff" -Recurse -Directory -Filter bin | Select-Object -First 1
+          $dst = "dist/SAQR AI Studio/ffmpeg"
+          New-Item -ItemType Directory -Force $dst | Out-Null
+          Copy-Item "$($bin.FullName)\ffmpeg.exe", "$($bin.FullName)\ffprobe.exe" $dst
+          Copy-Item "$($bin.FullName)\*.dll" $dst
+          $lic = Get-ChildItem "$env:RUNNER_TEMP\ff" -Recurse -Filter LICENSE.txt | Select-Object -First 1
+          if ($lic) { Copy-Item $lic.FullName "$dst\FFMPEG-LICENSE.txt" }
+          "FFmpeg (GPL build by BtbN, https://github.com/BtbN/FFmpeg-Builds). Source: https://ffmpeg.org/download.html" | Out-File "$dst\README.txt" -Encoding ascii
+          & "$dst\ffmpeg.exe" -hide_banner -version | Select-Object -First 1
 
       - name: Build installer (Inno Setup)
         run: |
-          if (-not (Test-Path "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe")) { choco install innosetup -y --no-progress }
-          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" /DAppVersion=${{ steps.ver.outputs.version }} installer\saqr.iss
+          choco upgrade innosetup -y --no-progress | Out-Null
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          & $iscc /? 2>&1 | Select-Object -First 2
+          $out = & $iscc /DAppVersion=${{ steps.ver.outputs.version }} installer\saqr.iss 2>&1 | Out-String
+          Write-Host $out
+          if ($LASTEXITCODE -ne 0) {
+            ($out -split "`r?`n" | Where-Object { $_.Trim() } | Select-Object -Last 8) | ForEach-Object { Write-Host "::error::ISCC: $_" }
+            exit 1
+          }
           Get-Item installer\Output\SAQR-AI-Setup.exe | Select-Object Name, Length
 
       - name: Silent install, diagnostics, real swap, uninstall
         run: |
           $setup = "installer\Output\SAQR-AI-Setup.exe"
+          function Fail($msg) { Write-Host "::error::$msg"; throw $msg }
           $p = Start-Process $setup -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/CURRENTUSER", "/ACCEPTMODELLICENSES=1", "/LOG=$env:RUNNER_TEMP\install.log" -Wait -PassThru
-          if ($p.ExitCode -ne 0) { Get-Content "$env:RUNNER_TEMP\install.log" -Tail 60; throw "install failed $($p.ExitCode)" }
+          if ($p.ExitCode -ne 0) { Get-Content "$env:RUNNER_TEMP\install.log" -Tail 8 | ForEach-Object { Write-Host "::error::install.log: $_" }; Fail "install failed $($p.ExitCode)" }
           $app = "$env:LOCALAPPDATA\Programs\SAQR AI Studio"
           $data = "$env:LOCALAPPDATA\SAQR AI Studio"
-          if (-not (Test-Path "$app\SAQR AI Studio.exe")) { throw "app exe missing" }
-          if (-not (Test-Path "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\SAQR AI Studio.lnk")) { throw "start menu shortcut missing" }
-          if (-not (Test-Path "$env:USERPROFILE\Desktop\SAQR AI Studio.lnk")) { throw "desktop shortcut missing" }
+          if (-not (Test-Path "$app\SAQR AI Studio.exe")) { Fail "app exe missing" }
+          if (-not (Test-Path "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\SAQR AI Studio.lnk")) { Fail "start menu shortcut missing" }
+          if (-not (Test-Path "$env:USERPROFILE\Desktop\SAQR AI Studio.lnk")) { Fail "desktop shortcut missing" }
           Get-ChildItem "$data\models" | Select-Object Name, Length | Format-Table
           Get-Content "$data\install_selftest.txt"
           $st = Get-Content "$data\install_selftest.json" | ConvertFrom-Json
-          if (-not $st.ok) { throw "installer self-test reported failures" }
+          if (-not $st.ok) { Fail "installer self-test reported failures" }
           $p = Start-Process "$app\SAQR AI Studio.exe" -ArgumentList "--cli", "swap", "-s", "tests\fixtures\painting_youth_met.jpg", "-t", "tests\fixtures\painting_lady_1760.jpg", "-o", "$env:RUNNER_TEMP\swap.png", "--i-have-consent" -Wait -PassThru
-          if ($p.ExitCode -ne 0 -or -not (Test-Path "$env:RUNNER_TEMP\swap.png")) { throw "swap failed" }
+          if ($p.ExitCode -ne 0 -or -not (Test-Path "$env:RUNNER_TEMP\swap.png")) { Fail "swap failed" }
           Copy-Item "$env:RUNNER_TEMP\swap.png" installer\Output\ci-swap-result.png
           Copy-Item "$data\install_selftest.json" installer\Output\ci-selftest.json
           $p = Start-Process "$app\unins000.exe" -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART" -Wait -PassThru
           Start-Sleep -Seconds 5
-          if (Test-Path "$app\SAQR AI Studio.exe") { throw "uninstall left the app behind" }
-          if (Test-Path "$env:USERPROFILE\Desktop\SAQR AI Studio.lnk") { throw "uninstall left the shortcut" }
+          if (Test-Path "$app\SAQR AI Studio.exe") { Fail "uninstall left the app behind" }
+          if (Test-Path "$env:USERPROFILE\Desktop\SAQR AI Studio.lnk") { Fail "uninstall left the shortcut" }
           "install / diagnostics / swap / uninstall: OK"
 
       - name: Checksums
