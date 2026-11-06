@@ -5,6 +5,8 @@ Layout (InsightFace 2d106): 0-32 jaw contour, 33-42 eye A, 43-51 brow A,
 """
 from __future__ import annotations
 
+from functools import lru_cache
+
 import cv2
 import numpy as np
 
@@ -28,6 +30,11 @@ def _dilate_pts(pts: np.ndarray, factor: float) -> np.ndarray:
 
 
 def ellipse_mask(size: int, feather: float = 0.12) -> np.ndarray:
+    return _ellipse_cached(size, round(feather, 3)).copy()
+
+
+@lru_cache(maxsize=16)
+def _ellipse_cached(size: int, feather: float) -> np.ndarray:
     m = np.zeros((size, size), np.float32)
     cv2.ellipse(m, (size // 2, int(size * 0.52)), (int(size * 0.40), int(size * 0.47)), 0, 0, 360, 1.0, -1,
                 lineType=cv2.LINE_AA)

@@ -150,9 +150,16 @@ class ModelManager:
 
     # ------------------------------------------------------------------ licences
     def license_accepted(self, model_id: str) -> bool:
-        if os.environ.get("SAQR_ACCEPT_MODEL_LICENSES") == "1":  # installer / CI after explicit acceptance page
+        if os.environ.get("SAQR_ACCEPT_MODEL_LICENSES") == "1":  # CI after explicit acceptance
             return True
-        return bool(self.settings and model_id in self.settings.settings.accepted_licenses)
+        if self.settings and model_id in self.settings.settings.accepted_licenses:
+            return True
+        # written by the Windows installer after the user ticked the licence page
+        marker = config.data_dir() / "accepted_licenses.txt"
+        try:
+            return model_id in marker.read_text(encoding="utf-8").split()
+        except OSError:
+            return False
 
     def accept_license(self, model_ids: Iterable[str]) -> None:
         if not self.settings:

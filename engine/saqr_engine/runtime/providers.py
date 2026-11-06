@@ -252,8 +252,10 @@ def select_backend(hw: Optional[HardwareReport] = None, forced: Optional[str] = 
             return BackendSelection(forced, provider_list(forced), checks, True, "",
                                     default_threads(forced, hw))
         fallback_reason = f"requested backend '{forced}' unusable: {c.reason if c else 'unknown provider'}"
-    for pid in PRIORITY:
-        if pid == "tensorrt" and not (include_tensorrt or forced == "tensorrt"):
+    trt = include_tensorrt or forced == "tensorrt"
+    order = (["tensorrt"] + [p for p in PRIORITY if p != "tensorrt"]) if trt else PRIORITY
+    for pid in order:
+        if pid == "tensorrt" and not trt:
             continue
         c = by_id.get(pid)
         if c and c.verified:

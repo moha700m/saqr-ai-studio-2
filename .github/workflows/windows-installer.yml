@@ -1,0 +1,126 @@
+name: Windows installer
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+    paths-ignore: ["web/**", "**.md"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: windows-installer-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 90
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: installer/requirements-windows.txt
+
+      - name: Install build dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r installer/requirements-windows.txt pytest
+          python -c "import onnxruntime as o; print(o.__version__, o.get_available_providers())"
+
+      - name: Unit tests (engine)
+        run: python -m pytest tests -q -m "not models"
+        env:
+          PYTHONPATH: engine;desktop
+
+      - name: Generate assets
+        run: |
+          python scripts/make_icon.py
+          python scripts/gen_inno_models.py
+
+      - name: Version
+        id: ver
+        run: |
+          $v = "0.1.0"
+          if ("${{ github.ref_type }}" -eq "tag") { $v = "${{ github.ref_name }}".TrimStart("v") }
+          "version=$v" >> $env:GITHUB_OUTPUT
+
+      - name: Build app (PyInstaller)
+        run: pyinstaller installer/saqr.spec --noconfirm --clean
+
+      - name: Smoke test frozen app
+        run: |
+          $exe = "dist/SAQR AI Studio/SAQR AI Studio.exe"
+          $p = Start-Process -FilePath $exe -ArgumentList "--probe-json", "$env:RUNNER_TEMP\probe.json" -Wait -PassThru
+          Get-Content "$env:RUNNER_TEMP\probe.txt"
+          if ($p.ExitCode -ne 0) { throw "probe failed: $($p.ExitCode)" }
+          (Get-ChildItem "dist/SAQR AI Studio" -Recurse | Measure-Object -Sum Length).Sum / 1MB
+
+      - name: Build installer (Inno Setup)
+        run: |
+          if (-not (Test-Path "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe")) { choco install innosetup -y --no-progress }
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" /DAppVersion=${{ steps.ver.outputs.version }} installer\saqr.iss
+          Get-Item installer\Output\SAQR-AI-Setup.exe | Select-Object Name, Length
+
+      - name: Silent install, diagnostics, real swap, uninstall
+        run: |
+          $setup = "installer\Output\SAQR-AI-Setup.exe"
+          $p = Start-Process $setup -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/CURRENTUSER", "/ACCEPTMODELLICENSES=1", "/LOG=$env:RUNNER_TEMP\install.log" -Wait -PassThru
+          if ($p.ExitCode -ne 0) { Get-Content "$env:RUNNER_TEMP\install.log" -Tail 60; throw "install failed $($p.ExitCode)" }
+          $app = "$env:LOCALAPPDATA\Programs\SAQR AI Studio"
+          $data = "$env:LOCALAPPDATA\SAQR AI Studio"
+          if (-not (Test-Path "$app\SAQR AI Studio.exe")) { throw "app exe missing" }
+          if (-not (Test-Path "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\SAQR AI Studio.lnk")) { throw "start menu shortcut missing" }
+          if (-not (Test-Path "$env:USERPROFILE\Desktop\SAQR AI Studio.lnk")) { throw "desktop shortcut missing" }
+          Get-ChildItem "$data\models" | Select-Object Name, Length | Format-Table
+          Get-Content "$data\install_selftest.txt"
+          $st = Get-Content "$data\install_selftest.json" | ConvertFrom-Json
+          if (-not $st.ok) { throw "installer self-test reported failures" }
+          $p = Start-Process "$app\SAQR AI Studio.exe" -ArgumentList "--cli", "swap", "-s", "tests\fixtures\painting_youth_met.jpg", "-t", "tests\fixtures\painting_lady_1760.jpg", "-o", "$env:RUNNER_TEMP\swap.png", "--i-have-consent" -Wait -PassThru
+          if ($p.ExitCode -ne 0 -or -not (Test-Path "$env:RUNNER_TEMP\swap.png")) { throw "swap failed" }
+          Copy-Item "$env:RUNNER_TEMP\swap.png" installer\Output\ci-swap-result.png
+          Copy-Item "$data\install_selftest.json" installer\Output\ci-selftest.json
+          $p = Start-Process "$app\unins000.exe" -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART" -Wait -PassThru
+          Start-Sleep -Seconds 5
+          if (Test-Path "$app\SAQR AI Studio.exe") { throw "uninstall left the app behind" }
+          if (Test-Path "$env:USERPROFILE\Desktop\SAQR AI Studio.lnk") { throw "uninstall left the shortcut" }
+          "install / diagnostics / swap / uninstall: OK"
+
+      - name: Checksums
+        run: |
+          $h = (Get-FileHash installer\Output\SAQR-AI-Setup.exe -Algorithm SHA256).Hash.ToLower()
+          "$h  SAQR-AI-Setup.exe" | Out-File installer\Output\SHA256SUMS.txt -Encoding ascii
+          Get-Content installer\Output\SHA256SUMS.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SAQR-AI-Setup
+          path: |
+            installer/Output/SAQR-AI-Setup.exe
+            installer/Output/SHA256SUMS.txt
+            installer/Output/ci-selftest.json
+            installer/Output/ci-swap-result.png
+
+      - name: Publish release
+        if: github.ref_type == 'tag'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            installer/Output/SAQR-AI-Setup.exe
+            installer/Output/SHA256SUMS.txt
+          body: |
+            ## SAQR AI Studio ${{ steps.ver.outputs.version }}
+            **Download `SAQR-AI-Setup.exe` and run it.** The installer detects your CPU/GPU, downloads the AI models
+            (after you accept their licences, SHA-256 verified), creates shortcuts, tests your hardware and starts the app.
+
+            * Windows 10/11 64-bit. GPU acceleration via DirectML (NVIDIA, AMD, Intel), automatic CPU fallback.
+            * Unsigned build: Windows SmartScreen may warn — choose "More info → Run anyway".
+            * Face models are licensed for non-commercial research use only (see MODEL_LICENSES.md).
