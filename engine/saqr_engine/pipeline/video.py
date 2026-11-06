@@ -202,6 +202,8 @@ def process_video(engine, job: VideoJob, progress: Optional[Callable[[int, int, 
             if (ow, oh) != (w, h):
                 out = cv2.resize(out, (ow, oh), interpolation=cv2.INTER_AREA if job.scale < 1 else cv2.INTER_CUBIC)
             if job.watermark:
+                if not out.flags.writeable:  # frames decoded from the pipe are read-only views
+                    out = out.copy()
                 draw_badge(out)
             if enc is None:
                 used_encoder = _working_encoder(ffmpeg, order)
