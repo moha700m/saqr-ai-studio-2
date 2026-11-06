@@ -104,9 +104,11 @@ jobs:
             $t = Get-Date
             $p = Start-Process -FilePath $file -ArgumentList $argv -PassThru
             if (-not $p.WaitForExit($seconds * 1000)) {
-              Get-Process | Where-Object { $_.ProcessName -match 'SAQR|unins|setup' } | ForEach-Object { Write-Host "::error::still running: $($_.ProcessName) pid $($_.Id)" }
-              if (Test-Path $log) { Get-Content $log -Tail 6 | ForEach-Object { Write-Host "::error::install.log: $_" } }
-              foreach ($f in $global:DiagLogs) { if (Test-Path $f) { Get-Content $f | Select-Object -Last 45 | ForEach-Object { Write-Host "::error::$(Split-Path $f -Leaf): $_" } } }
+              $procs = (Get-Process | Where-Object { $_.ProcessName -match 'SAQR|unins|setup' } | ForEach-Object { "$($_.ProcessName)#$($_.Id)" }) -join ', '
+              Write-Host "::error::still running: $procs"
+              foreach ($f in $global:DiagLogs) {
+                if (Test-Path $f) { $txt = (Get-Content $f | Select-Object -Last 80) -join ' || '; Write-Host "::error::$(Split-Path $f -Leaf): $txt" }
+              }
               $p | Stop-Process -Force -ErrorAction SilentlyContinue
               Fail "$what timed out after $seconds s"
             }
@@ -114,7 +116,7 @@ jobs:
             return $p.ExitCode
           }
           $rc = Run $setup @("/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/CURRENTUSER", "/ACCEPTMODELLICENSES=1", "/LOG=`"$log`"") 1200 "silent install"
-          if ($rc -ne 0) { Get-Content $log -Tail 8 | ForEach-Object { Write-Host "::error::install.log: $_" }; Fail "install failed $rc" }
+          if ($rc -ne 0) { Write-Host "::error::install.log: $((Get-Content $log -Tail 40) -join ' || ')"; Fail "install failed $rc" }
           $app = "$env:LOCALAPPDATA\Programs\SAQR AI Studio"
           $data = "$env:LOCALAPPDATA\SAQR AI Studio"
           if (-not (Test-Path "$app\SAQR AI Studio.exe")) { Fail "app exe missing" }
