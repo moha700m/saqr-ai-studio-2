@@ -222,7 +222,7 @@ begin
     if FileExists(Dest) and (GetSHA256OfFile(Dest) = ModelHashes[I]) then Continue;
     try
       DownloadTemporaryFile(ModelUrls[I], ModelFiles[I], ModelHashes[I], @OnDownloadProgress);
-      if not FileCopy(ExpandConstant('{tmp}\') + ModelFiles[I], Dest, False) then
+      if not CopyFile(ExpandConstant('{tmp}\') + ModelFiles[I], Dest, False) then
         DownloadFailures := DownloadFailures + ModelFiles[I] + ' (could not save)' + #13#10;
       DeleteFile(ExpandConstant('{tmp}\') + ModelFiles[I]);
     except
@@ -254,8 +254,7 @@ begin
   if CurPageID = wpFinished then
   begin
     if LoadStringFromFile(DataDir + '\install_selftest.txt', Summary) then
-      WizardForm.FinishedLabel.Caption := 'SAQR AI Studio is installed and was tested on your computer:' +
-        #13#10#13#10 + String(Summary) + #13#10#13#10 + 'Click Finish to start.'
+      WizardForm.FinishedLabel.Caption := 'SAQR AI Studio is installed and was tested on your computer:' + #13#10#13#10 + String(Summary) + #13#10#13#10 + 'Click Finish to start.'
     else if not ModelAccept.Checked then
       WizardForm.FinishedLabel.Caption := 'SAQR AI Studio is installed. Open the Models page to download ' +
         'the AI models before first use.';
