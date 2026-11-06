@@ -59,7 +59,7 @@ Name: "{autoprograms}\Uninstall {#AppName}"; Filename: "{uninstallexe}"
 Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppExe}"; Tasks: desktopicon
 
 [Run]
-Filename: "{app}\{#AppExe}"; Parameters: "--selftest-json ""{localappdata}\{#AppName}\install_selftest.json"""; \
+Filename: "{app}\{#AppExe}"; Parameters: "--probe-json ""{localappdata}\{#AppName}\install_selftest.json"""; \
   StatusMsg: "Testing your hardware and the AI models..."; Flags: runhidden waituntilterminated
 Filename: "{app}\{#AppExe}"; Description: "{cm:LaunchProgram,{#AppName}}"; Flags: nowait postinstall skipifsilent
 

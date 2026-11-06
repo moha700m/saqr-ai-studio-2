@@ -124,11 +124,16 @@ jobs:
           if (-not (Test-Path "$data\install_selftest.json")) { Fail "installer did not write the self-test report" }
           Get-Content "$data\install_selftest.txt" | ForEach-Object { Stage "selftest: $_" }
           $st = Get-Content "$data\install_selftest.json" | ConvertFrom-Json
-          if (-not $st.ok) { Fail "installer self-test reported failures" }
+          if (-not $st.backend.selected) { Fail "installer hardware/backend check did not select a backend" }
+          $env:SAQR_WATCHDOG = "420"
+          $rc = Run "$app\SAQR AI Studio.exe" @("--selftest-json", "`"$env:RUNNER_TEMP\selftest.json`"") 480 "model self-test"
+          if (Test-Path "$env:RUNNER_TEMP\selftest.log") { Get-Content "$env:RUNNER_TEMP\selftest.log" | Select-Object -Last 40 | ForEach-Object { Write-Host "::notice::selftest.log: $_" } }
+          if ($rc -ne 0) { Fail "model self-test failed ($rc)" }
+          Copy-Item "$env:RUNNER_TEMP\selftest.json" installer\Output\ci-selftest.json
           $rc = Run "$app\SAQR AI Studio.exe" @("--cli", "swap", "-s", "tests\fixtures\painting_youth_met.jpg", "-t", "tests\fixtures\painting_lady_1760.jpg", "-o", "`"$env:RUNNER_TEMP\swap.png`"", "--i-have-consent") 300 "face swap"
+          if (Test-Path "$data\cli_watchdog.log") { Get-Content "$data\cli_watchdog.log" | Select-Object -Last 30 | ForEach-Object { Write-Host "::notice::cli_watchdog.log: $_" } }
           if ($rc -ne 0 -or -not (Test-Path "$env:RUNNER_TEMP\swap.png")) { Fail "swap failed ($rc)" }
           Copy-Item "$env:RUNNER_TEMP\swap.png" installer\Output\ci-swap-result.png
-          Copy-Item "$data\install_selftest.json" installer\Output\ci-selftest.json
           $null = Run "$app\unins000.exe" @("/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART") 300 "uninstall"
           for ($i = 0; $i -lt 60 -and (Test-Path "$app\SAQR AI Studio.exe"); $i++) { Start-Sleep -Seconds 2 }
           if (Test-Path "$app\SAQR AI Studio.exe") { Fail "uninstall left the app behind" }
